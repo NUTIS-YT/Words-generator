@@ -152,6 +152,7 @@ class GenerationEngine:
             session_id=session_id,
             target_unique_words=stats.target,
             existing_project_words=self.store.word_count,
+            context_memory_enabled=self.settings.context_memory_enabled,
         )
         self.stats_callback(stats)
 
@@ -167,10 +168,15 @@ class GenerationEngine:
                 stats.message = "Generation stopped by the user."
                 break
 
+            context_words = (
+                [*self.store.recent_words, *repeated_words]
+                if self.settings.context_memory_enabled
+                else []
+            )
             user_prompt = build_user_prompt(
                 self.settings.language,
                 self.settings.part_of_speech,
-                avoid_words=[*self.store.recent_words, *repeated_words],
+                avoid_words=context_words,
             )
             request_sampling = self._sampling_for_duplicate_streak(consecutive_duplicates)
             if request_sampling.temperature > self.settings.sampling.temperature:
@@ -211,7 +217,7 @@ class GenerationEngine:
 
                 # Remember exact repeated forms even when they are older than the
                 # rolling project history. Similar words are deliberately allowed.
-                if candidate_key not in repeated_word_keys:
+                if self.settings.context_memory_enabled and candidate_key not in repeated_word_keys:
                     repeated_words.append(candidate)
                     repeated_word_keys.add(candidate_key)
                     if len(repeated_words) > MAX_REPEATED_WORD_MEMORY:

@@ -226,6 +226,23 @@ class SettingsPage(Page):
         vocabulary_layout.addLayout(prompt_actions)
         content_layout.addWidget(vocabulary_card)
 
+        context_card, context_layout = _card(
+            "Context memory",
+            "When enabled, the latest 80 saved words and exact duplicates encountered in this RUN "
+            "are sent with each request. Similar words remain allowed. Local duplicate rejection "
+            "works even when context memory is off.",
+        )
+        self.context_memory_button = QPushButton()
+        self.context_memory_button.setCheckable(True)
+        self.context_memory_button.setChecked(ProjectSettings().context_memory_enabled)
+        self.context_memory_button.toggled.connect(self._update_context_memory_button)
+        self._update_context_memory_button(self.context_memory_button.isChecked())
+        context_layout.addWidget(
+            self.context_memory_button,
+            alignment=Qt.AlignmentFlag.AlignLeft,
+        )
+        content_layout.addWidget(context_card)
+
         sampling_card, sampling_layout = _card(
             "Sampling parameters",
             "Starting values are a practical baseline, not universally optimal settings for every model.",
@@ -270,6 +287,10 @@ class SettingsPage(Page):
         footer.addWidget(self.save_button)
         self.root.addLayout(footer)
         self._template_id = "standard"
+
+    def _update_context_memory_button(self, enabled: bool) -> None:
+        state = "ON" if enabled else "OFF"
+        self.context_memory_button.setText(f"Context memory: {state}")
 
     def apply_template(self, template_id: str) -> None:
         self.prompt.setPlainText(
@@ -324,6 +345,7 @@ class SettingsPage(Page):
         self.part_of_speech.setCurrentText(settings.part_of_speech)
         self.prompt.setPlainText(settings.system_prompt)
         self._template_id = settings.prompt_template
+        self.context_memory_button.setChecked(settings.context_memory_enabled)
         self.set_sampling(settings.sampling)
 
     def get_project_settings(self, current: ProjectSettings) -> ProjectSettings:
@@ -332,6 +354,7 @@ class SettingsPage(Page):
         result.part_of_speech = self.part_of_speech.currentText().strip()
         result.system_prompt = self.prompt.toPlainText().strip()
         result.prompt_template = self._template_id
+        result.context_memory_enabled = self.context_memory_button.isChecked()
         result.sampling = self.get_sampling()
         result.validate()
         return result

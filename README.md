@@ -67,6 +67,6 @@ No open-source license has been selected yet. All rights remain with the reposit
 
 ## Automatic anti-repeat behavior
 
-During RUN, the generator includes a bounded list of the latest 80 saved words in the request prompt. Exact words that the model repeats but that are older than this rolling window are added to a session memory (up to 40 entries). The model is instructed to avoid only those exact forms; similar, inflected and semantically related words remain allowed.
+Context memory is an opt-in, per-project setting. When enabled, RUN includes up to 80 of the latest saved words in the request prompt. Exact words repeated by the model outside that rolling window are added to a session memory (up to 40 entries). Only those exact forms are excluded; similar, inflected and semantically related words remain allowed. When disabled, no existing or repeated words are sent in the prompt, but local duplicate rejection and adaptive temperature adjustment remain active.
 
 After two consecutive duplicate responses, the generator raises temperature in small steps (up to the API-supported maximum of 2.0). Accepting a new unique word resets temperature to the project setting. Local deduplication remains authoritative, so a repeated word is never saved or counted toward the target.

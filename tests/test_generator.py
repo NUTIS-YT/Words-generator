@@ -80,6 +80,7 @@ def test_duplicate_loop_updates_prompt_and_temporarily_increases_temperature(
         name="test",
         target_words=2,
         max_request_retries=0,
+        context_memory_enabled=True,
         sampling=SamplingSettings(temperature=0.0),
     )
     store = ProjectStore.create(tmp_path / "project", settings)
@@ -109,3 +110,25 @@ def test_duplicate_loop_updates_prompt_and_temporarily_increases_temperature(
     assert client.requests[2][1].temperature == 0.2
     # Accepting a new unique word resets the adaptive sampler to project settings.
     assert client.requests[3][1].temperature == 0.0
+
+
+
+def test_existing_words_are_sent_only_when_context_memory_is_enabled(tmp_path: Path) -> None:
+    for enabled in (False, True):
+        project_path = tmp_path / ("enabled" if enabled else "disabled")
+        settings = ProjectSettings(
+            name="test",
+            target_words=1,
+            max_request_retries=0,
+            context_memory_enabled=enabled,
+        )
+        store = ProjectStore.create(project_path, settings)
+        store.add_word("knownword")
+        client = FakeClient(["brandnew"])
+
+        stats = GenerationEngine(client, store, settings).run()
+
+        assert stats.status == "completed"
+        assert stats.added == 1
+        prompt = client.requests[0][0]
+        assert ("knownword" in prompt.casefold()) is enabled

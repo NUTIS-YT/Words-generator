@@ -18,6 +18,7 @@ class ProjectSettings:
     prompt_template: str = "standard"
     # Number of NEW unique words to append in one RUN.
     target_words: int = 100
+    context_memory_enabled: bool = False
     max_request_retries: int = 3
     sampling: SamplingSettings = field(default_factory=SamplingSettings)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
