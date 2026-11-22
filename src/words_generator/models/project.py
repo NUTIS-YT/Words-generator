@@ -16,8 +16,8 @@ class ProjectSettings:
     part_of_speech: str = "Nouns"
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     prompt_template: str = "standard"
+    # Number of NEW unique words to append in one RUN.
     target_words: int = 100
-    max_attempts_per_word: int = 15
     max_request_retries: int = 3
     sampling: SamplingSettings = field(default_factory=SamplingSettings)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -32,9 +32,8 @@ class ProjectSettings:
         if not self.system_prompt.strip():
             raise ValueError("System prompt cannot be empty.")
         if not 1 <= self.target_words <= 1_000_000:
-            raise ValueError("Target word count must be between 1 and 1,000,000.")
+            raise ValueError("Unique word target must be between 1 and 1,000,000.")
         if not 1 <= self.max_attempts_per_word <= 1000:
-            raise ValueError("Max attempts per word must be between 1 and 1000.")
         if not 0 <= self.max_request_retries <= 10:
             raise ValueError("Request retries must be between 0 and 10.")
         self.sampling.validate()
@@ -46,6 +45,8 @@ class ProjectSettings:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ProjectSettings":
         values = dict(data)
+        # Older project files may still contain this obsolete per-word retry limit.
+        values.pop("max_attempts_per_word", None)
         values["sampling"] = SamplingSettings.from_dict(values.get("sampling"))
         allowed = cls.__dataclass_fields__
         instance = cls(**{key: value for key, value in values.items() if key in allowed})

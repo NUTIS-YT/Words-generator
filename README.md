@@ -11,7 +11,8 @@ Cross-platform desktop application for generating unique words with an LLM throu
 - Connect to OpenAI-compatible chat completion endpoints.
 - Fetch available models from the models endpoint.
 - Configure language, part of speech, editable system prompt and sampling parameters.
-- Reject malformed responses and duplicate words locally.
+- Reject malformed responses and duplicate words locally; these do not consume the requested unique-word target.
+- RUN completes only after the requested number of new unique words has been saved (or the user stops it / the API becomes unavailable after retries).
 - Run generation in a background Qt thread with pause/resume/stop controls.
 - Save a JSONL session log and a checkpoint after every accepted word.
 - Keep API keys out of project files and use the operating-system credential store when available.

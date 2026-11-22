@@ -92,16 +92,16 @@ class ProjectPage(Page):
         self.root.addWidget(project_card)
 
         generation_card, generation_layout = _card(
-            "Generation target",
-            "The target is the number of new unique words to add during the next run.",
+            "RUN target · unique words",
+            "RUN keeps requesting words until this many NEW unique words have been saved. Duplicate and invalid answers do not advance progress.",
         )
         form = QFormLayout()
         self.target_words = QSpinBox()
         self.target_words.setRange(1, 1_000_000)
         self.target_words.setValue(100)
-        form.addRow("New words to generate", self.target_words)
+        form.addRow("Unique words to add in this RUN", self.target_words)
         generation_layout.addLayout(form)
-        self.start_button = QPushButton("Start generation")
+        self.start_button = QPushButton("RUN")
         self.start_button.setObjectName("primaryButton")
         self.pause_button = QPushButton("Pause")
         self.resume_button = QPushButton("Resume")
@@ -353,8 +353,8 @@ class StatisticsPage(Page):
         grid = QGridLayout()
         self.metric_labels: dict[str, QLabel] = {}
         metrics = [
-            ("Added", "added"),
-            ("Target", "target"),
+            ("Unique words added", "added"),
+            ("Unique-word target", "target"),
             ("Duplicates rejected", "duplicates"),
             ("Invalid responses", "invalid_responses"),
             ("API requests", "api_requests"),
@@ -387,7 +387,7 @@ class StatisticsPage(Page):
         target = int(stats.get("target", 0))
         percent = 0 if target <= 0 else min(100, added / target * 100)
         self.progress.setValue(int(percent * 10))
-        self.progress_label.setText(f"{added:,} / {target:,} new words · {percent:.1f}%")
+        self.progress_label.setText(f"{added:,} / {target:,} unique words · {percent:.1f}%")
         for key, label in self.metric_labels.items():
             value = stats.get(key, "—")
             if key == "average_latency_seconds" and isinstance(value, (float, int)):
