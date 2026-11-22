@@ -19,11 +19,11 @@ class APIConfig:
     api_key: str = ""
     timeout_seconds: float = 60.0
 
-    def validate(self) -> None:
+    def validate(self, *, require_model: bool = False) -> None:
         if not self.base_url.strip():
             raise ValueError("API Base URL is required.")
-        if not self.model.strip():
-            raise ValueError("Model identifier is required.")
+        if require_model and not self.model.strip():
+            raise ValueError("Select or enter a model identifier before generating words.")
         if not 1.0 <= self.timeout_seconds <= 600.0:
             raise ValueError("Timeout must be between 1 and 600 seconds.")
 
@@ -85,6 +85,7 @@ class OpenAICompatibleClient:
         user_prompt: str,
         sampling: SamplingSettings,
     ) -> str:
+        self.config.validate(require_model=True)
         sampling.validate()
         payload: dict[str, Any] = {
             "model": self.config.model,

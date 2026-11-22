@@ -246,7 +246,7 @@ class MainWindow(QMainWindow):
             return
         try:
             api_config = self._api_config_from_ui()
-            api_config.validate()
+            api_config.validate(require_model=True)
             project_settings = self.settings_page.get_project_settings(self.project.settings)
             project_settings.target_words = target
             project_settings.sampling = self.settings_page.get_sampling()

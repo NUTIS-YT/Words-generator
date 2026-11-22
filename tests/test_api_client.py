@@ -51,3 +51,18 @@ def test_models_endpoint_accepts_v1_base_url() -> None:
         assert client.list_models() == ["model-a", "model-b"]
     finally:
         client.close()
+
+
+def test_models_can_be_loaded_before_a_model_is_selected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://localhost:9000/v1/models"
+        return httpx.Response(200, json={"data": [{"id": "model-a"}]})
+
+    client = OpenAICompatibleClient(
+        APIConfig("http://localhost:9000/v1", ""),
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        assert client.list_models() == ["model-a"]
+    finally:
+        client.close()

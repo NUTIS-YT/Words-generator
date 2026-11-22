@@ -324,6 +324,7 @@ class SettingsPage(Page):
         self.part_of_speech.setCurrentText(settings.part_of_speech)
         self.prompt.setPlainText(settings.system_prompt)
         self._template_id = settings.prompt_template
+        self.set_sampling(settings.sampling)
 
     def get_project_settings(self, current: ProjectSettings) -> ProjectSettings:
         result = ProjectSettings.from_dict(current.to_dict())
@@ -334,106 +335,3 @@ class SettingsPage(Page):
         result.sampling = self.get_sampling()
         result.validate()
         return result
-
-
-class StatisticsPage(Page):
-    def __init__(self) -> None:
-        super().__init__("Statistics", "Live progress and diagnostics for the active generation session.")
-        self.progress_label = QLabel("No active generation")
-        self.progress_label.setObjectName("sectionTitle")
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 1000)
-        self.progress.setValue(0)
-        self.root.addWidget(self.progress_label)
-        self.root.addWidget(self.progress)
-
-        grid = QGridLayout()
-        self.metric_labels: dict[str, QLabel] = {}
-        metrics = [
-            ("Added", "added"),
-            ("Target", "target"),
-            ("Duplicates rejected", "duplicates"),
-            ("Invalid responses", "invalid_responses"),
-            ("API requests", "api_requests"),
-            ("API errors", "api_errors"),
-            ("Average request", "average_latency_seconds"),
-            ("Status", "status"),
-        ]
-        for index, (title, key) in enumerate(metrics):
-            card = QFrame()
-            card.setObjectName("metricCard")
-            layout = QVBoxLayout(card)
-            name = QLabel(title)
-            name.setObjectName("mutedLabel")
-            value = QLabel("—")
-            value.setObjectName("metricValue")
-            layout.addWidget(name)
-            layout.addWidget(value)
-            self.metric_labels[key] = value
-            grid.addWidget(card, index // 4, index % 4)
-        self.root.addLayout(grid)
-
-        log_card, log_layout = _card("Session log", "Latest events appear first.")
-        self.log = QListWidget()
-        self.log.setMinimumHeight(220)
-        log_layout.addWidget(self.log)
-        self.root.addWidget(log_card, 1)
-
-    def update_stats(self, stats: dict[str, object]) -> None:
-        added = int(stats.get("added", 0))
-        target = int(stats.get("target", 0))
-        percent = 0 if target <= 0 else min(100, added / target * 100)
-        self.progress.setValue(int(percent * 10))
-        self.progress_label.setText(f"{added:,} / {target:,} new words · {percent:.1f}%")
-        for key, label in self.metric_labels.items():
-            value = stats.get(key, "—")
-            if key == "average_latency_seconds" and isinstance(value, (float, int)):
-                label.setText(f"{value:.2f} s")
-            else:
-                label.setText(str(value))
-
-    def add_event(self, event: str, payload: dict[str, object]) -> None:
-        details = ", ".join(f"{key}={value}" for key, value in payload.items())
-        text = event.replace("_", " ")
-        if details:
-            text = f"{text} — {details}"
-        self.log.insertItem(0, text)
-        while self.log.count() > 500:
-            self.log.takeItem(self.log.count() - 1)
-
-
-class HistoryPage(Page):
-    def __init__(self) -> None:
-        super().__init__("History", "Previous generation sessions stored in the current project.")
-        self.sessions = QListWidget()
-        self.root.addWidget(self.sessions, 1)
-        self.details = QPlainTextEdit()
-        self.details.setReadOnly(True)
-        self.details.setPlaceholderText("Select a session to inspect its event log.")
-        self.details.setMaximumHeight(180)
-        self.root.addWidget(self.details)
-        self.sessions.currentItemChanged.connect(self._show_selected)
-        self._session_paths: dict[str, Path] = {}
-
-    def set_project(self, store: ProjectStore | None) -> None:
-        self.sessions.clear()
-        self.details.clear()
-        self._session_paths.clear()
-        if store is None:
-            return
-        for path in store.list_sessions():
-            display = path.stem.replace("session_", "")
-            self._session_paths[display] = path
-            self.sessions.addItem(display)
-
-    def _show_selected(self, current: object, _previous: object) -> None:
-        if current is None:
-            return
-        path = self._session_paths.get(current.text())
-        if path is None:
-            return
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-            self.details.setPlainText("\n".join(lines[-200:]))
-        except OSError as exc:
-            self.details.setPlainText(f"Could not read session log: {exc}")
