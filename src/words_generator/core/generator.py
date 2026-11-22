@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Protocol
 
 from words_generator.api.client import APIError
@@ -12,6 +13,10 @@ from words_generator.models.generation import GenerationStats
 from words_generator.models.project import ProjectSettings
 from words_generator.models.sampling import SamplingSettings
 from words_generator.storage.project_store import ProjectStore
+
+# Keep prompt memory useful without allowing it to grow with the whole project.
+MAX_REPEATED_WORD_MEMORY = 40
+DUPLICATE_STREAK_BEFORE_ADAPTATION = 2
 
 
 class WordClient(Protocol):
@@ -77,12 +82,30 @@ class GenerationEngine:
             self.stats_callback(stats)
         return True
 
-    def _request_candidate(self, stats: GenerationStats, user_prompt: str) -> str | None:
+    def _sampling_for_duplicate_streak(self, duplicate_streak: int) -> SamplingSettings:
+        """Temporarily raise temperature when the model gets stuck repeating itself."""
+        base = self.settings.sampling
+        if duplicate_streak < DUPLICATE_STREAK_BEFORE_ADAPTATION:
+            return base
+
+        escalation = min(0.2 * (duplicate_streak - 1), 0.8)
+        temperature = min(2.0, base.temperature + escalation)
+        if temperature <= base.temperature:
+            return base
+        return replace(base, temperature=round(temperature, 2))
+
+    def _request_candidate(
+        self,
+        stats: GenerationStats,
+        user_prompt: str,
+        sampling: SamplingSettings | None = None,
+    ) -> str | None:
         """Make one successful model request, retrying only transport/API failures.
 
         Duplicate and invalid responses are handled by the outer generation loop
         and do not count as request failures.
         """
+        request_sampling = sampling or self.settings.sampling
         for retry_index in range(self.settings.max_request_retries + 1):
             if not self._wait_if_paused(stats) or self.stop_event.is_set():
                 return None
@@ -95,7 +118,7 @@ class GenerationEngine:
                 raw = self.client.generate_word(
                     system_prompt=self.settings.system_prompt,
                     user_prompt=user_prompt,
-                    sampling=self.settings.sampling,
+                    sampling=request_sampling,
                 )
                 stats.total_latency_seconds += time.monotonic() - request_started
                 self.stats_callback(stats)
@@ -131,18 +154,33 @@ class GenerationEngine:
             existing_project_words=self.store.word_count,
         )
         self.stats_callback(stats)
-        user_prompt = build_user_prompt(self.settings.language, self.settings.part_of_speech)
 
-        # Only successfully persisted unique words advance stats.added.
-        # Duplicates and invalid responses are retried without an attempt cap:
-        # RUN ends only at the unique-word target, user stop, or API failure.
+        # Prompt memory starts with the most recently saved words in the project.
+        # Any older word that the model repeats is added to this session's memory.
+        repeated_words: list[str] = []
+        repeated_word_keys: set[str] = set()
+        consecutive_duplicates = 0
+
         while stats.added < stats.target:
             if not self._wait_if_paused(stats):
                 stats.status = "stopped"
                 stats.message = "Generation stopped by the user."
                 break
 
-            raw = self._request_candidate(stats, user_prompt)
+            user_prompt = build_user_prompt(
+                self.settings.language,
+                self.settings.part_of_speech,
+                avoid_words=[*self.store.recent_words, *repeated_words],
+            )
+            request_sampling = self._sampling_for_duplicate_streak(consecutive_duplicates)
+            if request_sampling.temperature > self.settings.sampling.temperature:
+                self._event(
+                    "anti_repeat_adjusted",
+                    consecutive_duplicates=consecutive_duplicates,
+                    temperature=request_sampling.temperature,
+                )
+
+            raw = self._request_candidate(stats, user_prompt, request_sampling)
             if raw is None:
                 if self.stop_event.is_set():
                     stats.status = "stopped"
@@ -169,9 +207,21 @@ class GenerationEngine:
             candidate_key = word_key(candidate)
             if candidate_key in self.store.word_keys:
                 stats.duplicates += 1
+                consecutive_duplicates += 1
+
+                # Remember exact repeated forms even when they are older than the
+                # rolling project history. Similar words are deliberately allowed.
+                if candidate_key not in repeated_word_keys:
+                    repeated_words.append(candidate)
+                    repeated_word_keys.add(candidate_key)
+                    if len(repeated_words) > MAX_REPEATED_WORD_MEMORY:
+                        removed = repeated_words.pop(0)
+                        repeated_word_keys.discard(word_key(removed))
+
                 self._event(
                     "duplicate_rejected",
                     word=candidate,
+                    duplicate_streak=consecutive_duplicates,
                     added=stats.added,
                     target=stats.target,
                 )
@@ -181,9 +231,11 @@ class GenerationEngine:
             if not self.store.add_word(candidate):
                 # The store rechecks uniqueness immediately before writing.
                 stats.duplicates += 1
+                consecutive_duplicates += 1
                 self._event(
                     "duplicate_rejected",
                     word=candidate,
+                    duplicate_streak=consecutive_duplicates,
                     added=stats.added,
                     target=stats.target,
                 )
@@ -191,6 +243,7 @@ class GenerationEngine:
                 continue
 
             stats.added += 1
+            consecutive_duplicates = 0
             self._event(
                 "word_accepted",
                 word=candidate,

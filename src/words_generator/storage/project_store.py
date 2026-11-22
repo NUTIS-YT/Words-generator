@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import threading
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from words_generator.models.project import ProjectSettings
 
 PROJECT_FILE = "project.json"
 WORDS_FILE = "words.txt"
+RECENT_WORDS_LIMIT = 80
 
 
 class ProjectError(RuntimeError):
@@ -32,6 +34,7 @@ class ProjectStore:
         self.backups_path = path / "backups"
         self._lock = threading.RLock()
         self.word_keys: set[str] = set()
+        self._recent_words: deque[str] = deque(maxlen=RECENT_WORDS_LIMIT)
         self._active_session_file: Path | None = None
         self._load_word_keys()
 
@@ -73,8 +76,15 @@ class ProjectStore:
     def word_count(self) -> int:
         return len(self.word_keys)
 
+    @property
+    def recent_words(self) -> list[str]:
+        """Return a bounded rolling history for anti-repeat prompt context."""
+        with self._lock:
+            return list(self._recent_words)
+
     def _load_word_keys(self) -> None:
         self.word_keys.clear()
+        self._recent_words.clear()
         if not self.words_path.exists():
             return
         try:
@@ -84,10 +94,14 @@ class ProjectStore:
                     if not raw.strip():
                         continue
                     try:
-                        self.word_keys.add(word_key(normalize_word(raw)))
+                        candidate = normalize_word(raw)
+                        key = word_key(candidate)
                     except ValueError:
                         # Keep malformed legacy rows in the file, but do not index them.
                         continue
+                    if key not in self.word_keys:
+                        self.word_keys.add(key)
+                        self._recent_words.append(candidate)
         except OSError as exc:
             raise ProjectError(f"Could not read words file: {exc}") from exc
 
@@ -120,6 +134,7 @@ class ProjectStore:
             except OSError as exc:
                 raise ProjectError(f"Could not append a word to {WORDS_FILE}: {exc}") from exc
             self.word_keys.add(key)
+            self._recent_words.append(candidate)
             return True
 
     def start_session(self, metadata: dict[str, Any]) -> str:

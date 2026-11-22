@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from words_generator.core.word_validator import word_key
 from words_generator.models.project import DEFAULT_SYSTEM_PROMPT
+
+MAX_PROMPT_AVOID_WORDS = 120
 
 PROMPT_TEMPLATES: dict[str, tuple[str, str]] = {
     "standard": (
@@ -28,11 +31,39 @@ PROMPT_TEMPLATES: dict[str, tuple[str, str]] = {
 }
 
 
-def build_user_prompt(language: str, part_of_speech: str) -> str:
-    return (
+def build_user_prompt(
+    language: str,
+    part_of_speech: str,
+    *,
+    avoid_words: list[str] | tuple[str, ...] = (),
+) -> str:
+    prompt = (
         f"Generate one {part_of_speech.lower()} in {language}. "
         "Return exactly one word and no other text."
     )
+
+    unique_words: list[str] = []
+    seen_keys: set[str] = set()
+    for word in avoid_words:
+        normalized = word.strip()
+        if not normalized:
+            continue
+        key = word_key(normalized)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        unique_words.append(normalized)
+
+    if unique_words:
+        excluded = unique_words[-MAX_PROMPT_AVOID_WORDS:]
+        prompt += (
+            "\n\nDo not repeat any exact word from this already-used list:\n"
+            + ", ".join(excluded)
+            + "\nOnly the exact forms listed above are excluded. Similar, derived, "
+            "inflected, or semantically related words are allowed."
+        )
+
+    return prompt
 
 
 def prompt_for_template(template_id: str, language: str, part_of_speech: str) -> str:

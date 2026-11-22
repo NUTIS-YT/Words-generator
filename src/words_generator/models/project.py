@@ -33,7 +33,6 @@ class ProjectSettings:
             raise ValueError("System prompt cannot be empty.")
         if not 1 <= self.target_words <= 1_000_000:
             raise ValueError("Unique word target must be between 1 and 1,000,000.")
-        if not 1 <= self.max_attempts_per_word <= 1000:
         if not 0 <= self.max_request_retries <= 10:
             raise ValueError("Request retries must be between 0 and 10.")
         self.sampling.validate()
